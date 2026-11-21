@@ -425,7 +425,9 @@
   </div>
 </div>
 
-<script src="words.js"></script><script>
+<details class="backup-panel"><summary>Keep your progress safe</summary><p>Save a backup to move your progress to another browser. Import replaces the progress on this device.</p><div class="backup-actions"><button id="backupExport">Download backup</button><label class="backup-file">Choose backup<input id="backupImport" type="file" accept=".json,application/json"></label></div><p id="backupStatus" role="status" aria-live="polite"></p><div id="backupConfirm" hidden><button id="backupApply">Replace current progress</button><button id="backupCancel">Cancel</button></div></details>
+<style>.backup-panel{max-width:680px;margin:24px auto 40px;padding:18px 22px;border:1px solid #cbd7c8;border-radius:18px;background:#f3f7ef;color:#253b2d;font-size:14px;line-height:1.6}.backup-panel summary{font-weight:650;cursor:pointer;min-height:32px}.backup-actions,#backupConfirm{display:flex;flex-wrap:wrap;gap:10px}.backup-panel button,.backup-file{font:inherit;padding:10px 15px;min-height:44px;border:1px solid #91ac96;border-radius:12px;background:#fff;color:#253b2d;cursor:pointer}.backup-file{position:relative;overflow:hidden}.backup-file input{position:absolute;inset:0;opacity:0;width:100%;cursor:pointer}.backup-panel :focus-visible,.backup-file:focus-within{outline:3px solid #416e4d;outline-offset:3px}@media(max-width:720px){.backup-panel{margin:20px 16px}}</style>
+<script src="progress.js?v=backup1"></script><script src="words.js"></script><script>
 (function () {
   var state = {
     words: [], meta: { streak: 0, lastDate: null, totalCorrect: 0, totalWrong: 0, activeDays: [], quizMode: 'choice' }, tab: 'learn', deck: 'main',
@@ -1056,6 +1058,26 @@
     try { localStorage.setItem('sprouts-progress-v1',JSON.stringify({words:state.words,meta:state.meta})); }
     catch(e) { document.getElementById('dbHint').textContent='Storage unavailable: progress lasts for this visit only.'; }
   }
+  var pendingBackup=null;
+  var backupStatus=document.getElementById('backupStatus');
+  document.getElementById('backupExport').onclick=function(){
+    var data={app:'sprouts',version:1,exportedAt:nowIso(),words:state.words.map(function(w){return {id:w.id,box:w.box,wrongStreak:w.wrongStreak||0,dueAt:w.dueAt||null,lastResult:w.lastResult||null};}),meta:state.meta};
+    var url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));var a=document.createElement('a');a.href=url;a.download='sprouts-progress-'+todayStr()+'.json';a.click();setTimeout(function(){URL.revokeObjectURL(url);},1000);backupStatus.textContent='Backup downloaded. Keep the file to restore your progress.';
+  };
+  document.getElementById('backupImport').onchange=async function(){
+    pendingBackup=null;document.getElementById('backupConfirm').hidden=true;
+    var file=this.files[0];if(!file)return;
+    try{if(file.size>1000000)throw Error('This file is too large. Choose a Sprouts backup under 1 MB.');
+      pendingBackup=SproutsProgress.validate(JSON.parse(await file.text()),window.SPROUTS_WORDS);
+      backupStatus.textContent='Ready to import '+pendingBackup.words.length+' words and '+(pendingBackup.meta.totalCorrect+pendingBackup.meta.totalWrong)+' answers. Your current progress will be replaced.';document.getElementById('backupConfirm').hidden=false;
+    }catch(e){backupStatus.textContent='Could not import: '+e.message;}this.value='';
+  };
+  document.getElementById('backupCancel').onclick=function(){pendingBackup=null;document.getElementById('backupConfirm').hidden=true;backupStatus.textContent='Import cancelled. Your progress is unchanged.';};
+  document.getElementById('backupApply').onclick=function(){
+    if(!pendingBackup)return;
+    try{localStorage.setItem('sprouts-progress-v1',JSON.stringify(pendingBackup));}catch(e){backupStatus.textContent='Storage is unavailable. Your progress has not been replaced.';return;}
+    state.words=pendingBackup.words;state.meta=pendingBackup.meta;pendingBackup=null;state.order={learn:[],review:[],browse:[]};state.idx={learn:0,review:0,browse:0};state.lastShown={learn:null,review:null,browse:null};state.reviewState=null;state.tab=pickInitialTab();renderStreak();render();document.getElementById('backupConfirm').hidden=true;backupStatus.textContent='Progress restored on this device.';
+  };
   function boot() {
     state.words=window.SPROUTS_WORDS.map(function(w){return Object.assign({},w);});
     try { var saved=JSON.parse(localStorage.getItem('sprouts-progress-v1')||'null');
